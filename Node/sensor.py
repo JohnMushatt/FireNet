@@ -4,7 +4,7 @@ import dht
 
 class TempHumidSensor:
     def __init__(self):
-        self.last_read = time.ticks_ms()
+        self.last_read = time.ticks_ms() - 10000
         
         self.dht = dht.DHT22(Pin(15))
     
