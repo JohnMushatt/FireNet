@@ -1,6 +1,5 @@
 import asyncio
 import json
-import websockets
 import logging
 import os
 import sys
@@ -9,70 +8,111 @@ import uuid
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("WebSocketServer")
+logger = logging.getLogger("SocketServer")
 
 # Store connected clients
+connected_clients = {}
+MAX_CLIENTS = 5
 
-class WebSocketServer:
-    def __init__(self, host='0.0.0.0', port=8765):
-        self.host = host
-        self.port = port
-        self.server = None
-        self.clients = set()
-
-    # Handle WebSocket connections
-    async def handle_connection(self, websocket, path):
-        esp32_id = None
-        try:
-            # Add new client to connected set
-            self.clients.add(websocket)
-            logger.info(f"New client connected. Total clients: {len(self.clients)}")
-            
-            # Main communication loop
-            async for message in websocket:
-                # Process registration message
-                if message.startswith('REGISTER:'):
-                    esp32_id = message.split(':', 1)[1]
-                    logger.info(f"ESP32 registered with ID: {esp32_id}")
-                    await websocket.send(json.dumps({"status": "registered"}))
-                    continue
-                    
-                # Process regular data
-                await self.process_data(message, websocket)
-                
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Connection closed for ESP32 {esp32_id or 'unknown'}")
-        finally:
-            # Remove client when disconnected
-            self.clients.remove(websocket)
-            logger.info(f"Client disconnected. Remaining clients: {len(self.clients)}")
-
-    # Data processing function
-
-    async def process_data(self, data, websocket) -> bool:
-        
-        try:
-            parsed_data = json.loads(data)
-            logger.info(f"Received data: {parsed_data}")
-            
-            # Example: respond to temperature readings over threshold
-            
-        except json.JSONDecodeError:
-            logger.error(f"Invalid JSON received: {data}")
-            return False
-        return True
+async def handle_client(reader, writer):
+    """Handle a client connection."""
+    # Generate a unique client ID
+    client_id = str(uuid.uuid4())
+    addr = writer.get_extra_info('peername')
     
-    async def run(self):
-        logger.info(f"Starting WebSocket server on {self.host}:{self.port}")
-        server = await websockets.serve(self.handle_connection, "0.0.0.0", 8765)
-        logger.info("WebSocket server started on ws://0.0.0.0:8765")
+    client_info = {
+        "reader": reader,
+        "writer": writer,
+        "addr": addr,
+        "connected_at": time.time(),
+        "last_message": None,
+        "data": []
+    }
+    
+    # Check if we can accept more clients
+    if len(connected_clients) >= MAX_CLIENTS:
+        logger.warning(f"Maximum clients reached. Rejecting new connection from {addr}")
+        writer.write(json.dumps({"status": "error", "message": "Server full"}).encode() + b'\n')
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        return
+    
+    # Add the client to our dictionary
+    connected_clients[client_id] = client_info
+    logger.info(f"New client connected from {addr}. ID: {client_id}. Total clients: {len(connected_clients)}")
+    
+    try:
+        # Send welcome message
+        writer.write(json.dumps({"status": "connected", "client_id": client_id}).encode() + b'\n')
+        await writer.drain()
         
-        # Server keeps running
-        await server.wait_closed()
+        # Handle messages from the client
+        while True:
+            data = await reader.readline()
+            if not data:  # Client disconnected
+                break
+                
+            try:
+                message = json.loads(data.decode().strip())
+                logger.info(f"Received data from {client_id}: {message}")
+                
+                # Update client info
+                client_info["last_message"] = time.time()
+                client_info["data"].append(message)
+                
+                # Process the data (you can customize this part)
+                response = {"status": "received", "timestamp": time.time()}
+                writer.write(json.dumps(response).encode() + b'\n')
+                await writer.drain()
+                
+            except json.JSONDecodeError:
+                logger.error(f"Invalid JSON from client {client_id}")
+                writer.write(json.dumps({"status": "error", "message": "Invalid JSON"}).encode() + b'\n')
+                await writer.drain()
+    
+    except Exception as e:
+        logger.error(f"Error handling client {client_id}: {e}")
+    
+    finally:
+        # Remove client when they disconnect
+        if client_id in connected_clients:
+            del connected_clients[client_id]
+            logger.info(f"Client {client_id} removed. Total clients: {len(connected_clients)}")
+        writer.close()
+        await writer.wait_closed()
+
+async def status_monitor():
+    """Periodically print server status"""
+    while True:
+        logger.info(f"Server status: {len(connected_clients)}/{MAX_CLIENTS} clients connected")
+        await asyncio.sleep(60)  # Update every minute
 
 async def main():
-    server = WebSocketServer()
-    await server.run()
+    # Get local IP address or use localhost
+    host = "0.0.0.0"  # Listen on all network interfaces
+    port = 8765
+    
+    # Start the TCP server
+    server = await asyncio.start_server(handle_client, host, port)
+    
+    addr = server.sockets[0].getsockname()
+    logger.info(f'TCP server started on {addr}')
+    #hostname = server.sockets[0].getsockname()
+    ip_address = server.sockets[0].getsockname()
+    import socket
+    hostname = socket.gethostname()
+    ip_address = socket.gethostbyname(hostname)
+    logger.info(f"WebSocket server address: {ip_address} <----- Put this in esp self.server_ip variable")
+    # Start status monitor
+    monitor_task = asyncio.create_task(status_monitor())
+    
+    async with server:
+        await server.serve_forever()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Server shutting down")
+        sys.exit(0)
