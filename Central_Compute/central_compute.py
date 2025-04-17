@@ -62,7 +62,7 @@ async def handle_client(reader, writer):
                 client_info["last_message"] = time.time()
                 client_info["data"].append(message)
                 
-                # Process the data (you can customize this part)
+                # Do stuff with data here
                 response = {"status": "msg_received", "timestamp": time.time()}
                 writer.write(json.dumps(response).encode() + b'\n')
                 await writer.drain()
@@ -101,6 +101,7 @@ async def main():
     logger.info(f'TCP server started on {addr}')
     #hostname = server.sockets[0].getsockname()
     ip_address = server.sockets[0].getsockname()
+    #get local ip address
     import socket
     hostname = socket.gethostname()
     ip_address = socket.gethostbyname(hostname)
