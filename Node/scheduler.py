@@ -1,17 +1,26 @@
 import asyncio
+import socket
 import network
 from machine import Pin
 import json
 import time
 from neopixel import NeoPixel
-from mqtt import MQTT_Handler
+def is_micropython():
+    """Returns True if running on MicroPython (ESP32, etc.)"""
+    try:
+        from machine import Pin
+        return True
+    except ImportError:
+        return False
 class AsyncNode:
     def __init__(self, ssid=None, password=None):
-        self.station = network.WLAN(network.STA_IF)
+        self.wlan= network.WLAN(network.STA_IF)
         self.ssid = ssid
         self.password = password
         self.data_queue = []
         self.connected = False
+        self.server_ip = "192.168.0.94"  # Replace with your server's IP address
+        self.server_port = 8765 
         self.init_neopixel()
         
     def init_neopixel(self):
@@ -21,49 +30,34 @@ class AsyncNode:
         self.neopixel.fill((25,0,0))  # Red indicates not connected
         self.neopixel.write()
 
-    async def connect_wifi(self):
+    async def wifi_driver_init(self):
         drv_str = "WiFi Driver"
-        print(f"{drv_str}: Connecting to WiFi")
-        print(f"{drv_str}: Station is connected: {self.station.isconnected()}")
-        if self.station.isconnected():
-            print(f"{drv_str}: Already connected to WiFi")
-            self.connected = True
-            self.neopixel.fill((0,25,0))  # Green indicates connected
-            self.neopixel.write()
-            return True
-        if not self.station.active():
-            self.station.active(True)
-            print(f"{drv_str}: initialized")
         
-        while not self.station.isconnected():
-            print(f'{drv_str}: Connecting to {self.ssid}...')
-            try:
-                self.station.connect(self.ssid, self.password)
-            except Exception as e:
-                print(f"{drv_str}: Error connecting to WiFi: {e}")
-                self.neopixel.fill((25,0,0))  # Red indicates disconnected
-                self.neopixel.write()
-            
 
-            # Wait for connection with timeout
-            max_wait = 20
-            while max_wait > 0:
-                if self.station.isconnected():
-                    break
-                max_wait -= 1
-                await asyncio.sleep(1)
-            
-            if self.station.isconnected():
-                self.connected = True
+        #check if already connected
+        if self.wlan.isconnected():
+            print(f"{drv_str}: Already connected to WiFi, disconnecting and restarting connection process")
+            self.wlan.disconnect()
+            time.sleep(1)
+        print(f"{drv_str}: Connecting to WiFi network {self.ssid}")
+        #connect to wifi
+        reconnect_count = 0
+        while  reconnect_count < 5 and not self.wlan.isconnected():
+            self.wlan.connect(self.ssid, self.password)
+            time.sleep(1)
+            #print(f"Connected? {self.wlan.isconnected()}")
+            if self.wlan.isconnected():
+                print("Connected to WiFi")
                 self.neopixel.fill((0,25,0))  # Green indicates connected
                 self.neopixel.write()
                 print(f'{drv_str}: Connected to WiFi')
-                print(f'{drv_str}: Network config: {self.station.ifconfig()}')
+                self.connected = True
+                return True
             else:
                 print(f'{drv_str}: Failed to connect')
-                return False
-        print(f"{drv_str}: Initialized")
-        return True
+                reconnect_count += 1
+        print(f'{drv_str}: Failed to connect to WiFi after {reconnect_count} attempts')
+        return False
 
     async def simulate_sensor_reading(self):
         while True:
@@ -81,20 +75,30 @@ class AsyncNode:
             if self.data_queue and self.connected:
                 data = self.data_queue.pop(0)
                 # Simulate data transmission
-                print(f'Transmitting data: {data}')
+                json_data = json.dumps(data) + '\n'
+                print(f'Transmitting data: {json_data} to {self.server_ip}:{self.server_port}')
+
+                self.socket.send(json_data.encode('utf-8'))
+
+                resp = self.socket.recv(1024)
+                resp = json.loads(resp)
+                if resp['status'] == 'msg_received':
+                    print(f'Data received from central compute node @ {resp["timestamp"]}')
+                else:
+                    print(f'Data not received from central compute node')
                 # Here you would typically send the data to your server
                 # using a protocol of your choice (MQTT, HTTP, etc.)
-            await asyncio.sleep(1)
+            await asyncio.sleep(5)
 
     async def connection_monitor(self):
         drv_str = "Connection Monitor"
         while True:
-            if not self.station.isconnected():
+            if not self.wlan.isconnected():
                 self.connected = False
                 self.neopixel.fill((25,0,0))  # Red indicates disconnected
                 self.neopixel.write()
                 print(f"{drv_str}: WiFi disconnected, attempting to reconnect...")
-                await self.connect_wifi()
+                await self.wifi_driver_init()
             else:
                 if self.neopixel[0] == (0,0,0):
                     self.neopixel.fill((0,25,0))  # Green indicates connected
@@ -103,23 +107,49 @@ class AsyncNode:
                 self.neopixel.write()
             #print(f"{drv_str}: {self.station.isconnected()}")
             await asyncio.sleep(1)
-    async def mqtt_handler(self):
-        drv_str = "MQTT Handler"
-        mqtt_handler = MQTT_Handler(client_id="node_1", broker="N/A", port=1883, user="N/A", password="N/A")
-        print(f"{drv_str}: MQTT handler initialized")
+   
+    async def socket_driver_init(self):
+        drv_str = "Socket Driver"
+        print(f"{drv_str}: setting up socket to central compute node")
+
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.addrinfo = socket.getaddrinfo(self.server_ip, self.server_port)
+        self.socket.connect(self.addrinfo[0][-1])
+        print(f"{drv_str}: socket connected to {self.server_ip}:{self.server_port}")
+        #covert to json
+        resp = self.socket.recv(1024)
+        resp = json.loads(resp)
+        if resp['client_id']:
+            self.client_id = resp['client_id']
+            print(f"{drv_str}: received client id from central compute node: {self.client_id}")
+        if resp['status']:
+            self.connected = True
+            print(f"{drv_str}: central compute acknoledged connection")
+        else:
+            print(f"{drv_str}: central compute did not acknowledge connection")
+       
     async def run(self):
         drv_str = "Scheduler"
         # Create tasks for all our async functions
-        wifi_task = asyncio.create_task(self.connect_wifi())
-        print(f"{drv_str}: started wifi task")
-        await wifi_task  # Wait for initial connection
-        print(f"{drv_str}: wifi task completed")
+        #connect to wifi
+        wifi_task = asyncio.create_task(self.wifi_driver_init())
+        print(f"{drv_str}: started wifi_driver_init task")
+        #wait for wifi to connect
+        await wifi_task 
+        print(f"{drv_str}: wifi_driver_init task completed")
+
+        #setup socket
+        print(f"{drv_str}: starting socket_init task")
+        socket_task = asyncio.create_task(self.socket_driver_init())
+        await socket_task
+        print(f"{drv_str}: socket_init task completed")
+
         if self.connected:
             tasks = [
                 asyncio.create_task(self.simulate_sensor_reading()),
                 asyncio.create_task(self.transmit_data()),
-                asyncio.create_task(self.connection_monitor()),
-                asyncio.create_task(self.mqtt_handler())
+                #asyncio.create_task(self.connection_monitor()),
             ]
             print(f"{drv_str}: starting tasks\n {tasks}")
             await asyncio.gather(*tasks)
@@ -127,7 +157,9 @@ class AsyncNode:
     
 
 def main():
-    node = AsyncNode(ssid="Tilins Nightclub", password="engineers123")
+    if is_micropython():
+        print("micro p")
+    node = AsyncNode(ssid="Tilin's nightclub", password="engineers123")
     print("Starting Scheduler")
     asyncio.run(node.run())
     print("Scheduler finished")

@@ -54,7 +54,8 @@ async def handle_client(reader, writer):
                 break
                 
             try:
-                message = json.loads(data.decode().strip())
+                decoded_data = data.decode('utf-8')
+                message = json.loads(decoded_data)
                 logger.info(f"Received data from {client_id}: {message}")
                 
                 # Update client info
@@ -62,7 +63,7 @@ async def handle_client(reader, writer):
                 client_info["data"].append(message)
                 
                 # Process the data (you can customize this part)
-                response = {"status": "received", "timestamp": time.time()}
+                response = {"status": "msg_received", "timestamp": time.time()}
                 writer.write(json.dumps(response).encode() + b'\n')
                 await writer.drain()
                 
