@@ -8,7 +8,7 @@
             "name": "Central Compute",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/Central_Compute/central_compute.py"
+            "program": "${workspaceFolder}/Central_Compute/central_compute_gui.py"
         }
     ]
 }
