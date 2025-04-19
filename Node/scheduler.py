@@ -16,7 +16,7 @@ def is_micropython():
         return False
 class AsyncNode:
     def __init__(self, node_name : str, config=None):
-        self.node_name
+        self.node_name = node_name
         self.config = config
         self.wifi_driver = WiFiDriver(config)
 
@@ -153,7 +153,7 @@ def main():
         return
     if is_micropython():
         print("micro p")
-    node = AsyncNode(config=config)
+    node = AsyncNode("Test Node",config=config)
     print("Starting Scheduler")
     asyncio.run(node.scheduler_run())
     print("Scheduler finished")
