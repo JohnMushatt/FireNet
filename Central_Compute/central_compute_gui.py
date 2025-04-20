@@ -680,8 +680,12 @@ class ServerUI:
             monitor_task = asyncio.create_task(self.status_monitor())
             
             async with self.server:
-                await self.server.serve_forever()
-        
+                try:
+                    await self.server.serve_forever()
+                except Exception as e:
+                    if isinstance(e, asyncio.CancelledError):
+                        print(f"Server cancelled error: {e}")
+                        pass
         # Create new event loop for this thread
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)

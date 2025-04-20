@@ -5,10 +5,16 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Central Compute",
+            "name": "Central Compute: GUI",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/Central_Compute/central_compute_gui.py"
+        },
+        {
+            "name": "Central Compute: CLI",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/Central_Compute/central_compute_nogui.py"
         }
     ]
 }
