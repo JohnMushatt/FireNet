@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import socket
 import uuid
-
+from message_parser import MessageParser
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("ServerUI")
@@ -29,7 +29,7 @@ class ServerUI:
         self.server_thread = None
         self.loop = None
         self.server = None
-        
+        self.message_parser = MessageParser()
         self.setup_ui()
         self.update_status_display()
         
@@ -732,8 +732,8 @@ class ServerUI:
         
         try:
             # Send welcome message
-            writer.write(json.dumps({"status": "connected", "client_id": client_id}).encode() + b'\n')
-            await writer.drain()
+            #writer.write(json.dumps({"status": "connected", "client_id": client_id}).encode() + b'\n')
+            #await writer.drain()
             
             # Handle messages from the client
             while True:
@@ -745,17 +745,15 @@ class ServerUI:
                     decoded_data = data.decode('utf-8')
                     message = json.loads(decoded_data)
                     logger.info(f"Received data from {client_id}: {message}")
-                    
+
                     # Update client info
                     client_info["last_message"] = time.time()
                     client_info["data"].append(message)
                     
                     # Update UI
                     self.root.after(0, self.update_clients_view)
-                    
-                    # Send response
-                    response = {"status": "msg_received", "timestamp": time.time()}
-                    writer.write(json.dumps(response).encode() + b'\n')
+                    resp = await self.parse_message(message,client_id=client_id)
+                    writer.write(json.dumps(resp).encode() + b'\n')
                     await writer.drain()
                     
                 except json.JSONDecodeError:
@@ -774,10 +772,39 @@ class ServerUI:
                 # Update UI
                 self.root.after(0, self.update_clients_view)
                 self.root.after(0, self.update_client_dropdown)
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except ConnectionResetError:
+                logger.warning(f"Connection was reset by client {client_id}")
+            except Exception as e:
+                logger.error(f"Error while closing connection with client {client_id}: {e}")
+    async def parse_message(self, message, client_id):
+        """Parse incoming message and route to appropriate handler"""
+        try:
+            # Determine message type
+            msg_type = message.get("msg_id", "unknown")
             
-            writer.close()
-            await writer.wait_closed()
-    
+            # Log the message type and source
+            logger.info(f"Processing {msg_type} message from {client_id}")
+            resp = {"msg_id": "node_update_ack", "status": "ok"}
+            return resp
+            # Check if we have a handler for this message type
+            if msg_type in self.handlers:
+                # Call the appropriate handler
+                return await self.handlers[msg_type](message, client_id)
+            else:
+                # Handle unknown message type
+                logger.warning(f"No handler for message type: {msg_type}")
+                return {"status": "error", "message": f"Unknown message type: {msg_type}"}
+                
+        except KeyError as e:
+            logger.error(f"Missing required field in message: {e}")
+            return {"status": "error", "message": f"Missing required field: {e}"}
+        except Exception as e:
+            logger.error(f"Error parsing message: {e}")
+            return {"status": "error", "message": str(e)}
+
     async def status_monitor(self):
         """Periodically update server status"""
         while True:

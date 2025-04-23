@@ -10,10 +10,10 @@ class SocketDriver:
         self.socket = None
         self.connected = False
         self.client_id = None
-        self.server_ip = ["192.168.0.94", "192.168.0.145"]  # Server IPs to try
+        self.server_ip = ["192.168.0.94", "192.168.0.145", "192.168.0.95"]  # Server IPs to try
         self.server_port = 8765
         self.server_ip_index = 1  # Start with the second IP in the list
-        self.drv_str = "Socket Driver"
+        self.drv_str = "Socket_Driver"
     async def handle_error(self,e):
         func_str = "handle_error"
         print(f"{self.drv_str}: {func_str}: Error connecting to socket: {e}")
@@ -36,11 +36,11 @@ class SocketDriver:
             try:
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                
+                self.socket.settimeout(3)
                 # Get address info for the server
                 current_server_ip = self.server_ip[self.server_ip_index]
                 self.addrinfo = socket.getaddrinfo(current_server_ip, self.server_port)
-                logger.info(self.drv_str, func_str, f"socket connecting to {current_server_ip}:{self.server_port}. Attempt {reconnect_count}")
+                logger.info(self.drv_str, func_str, f"socket connecting to {current_server_ip}:{self.server_port}")
                 
                 # Connect to the server
             
@@ -49,13 +49,20 @@ class SocketDriver:
                 self.connected = True
                 logger.info(self.drv_str, func_str, f"socket connected to {current_server_ip}:{self.server_port}")
                 driver_table_status["Socket_Driver"] = True
-                
-            except Exception as e:
-                logger.error(self.drv_str, func_str, f"Error connecting to socket: {e}")
+                return True
 
-                reconnect_count += 1
+            except Exception as e:
+                #logger.error(self.drv_str, func_str, f"Error connecting to socket: {e}")
+                if e.errno == errno.ECONNREFUSED:
+                    pass
+                elif e.errno == errno.ETIMEDOUT:
+                    logger.error(self.drv_str, func_str, f"Socket connection timed out")
+                    self.server_ip_index = (self.server_ip_index + 1) % len(self.server_ip)
                 if retry:
                     await asyncio.sleep(1)
+                else:
+                    driver_table_status["Socket_Driver"] = False
+                    return False
                 
           
         if driver_table_status:
@@ -78,15 +85,15 @@ class SocketDriver:
             logger.error(self.drv_str, func_str, f"Error sending data: {e}")
             self.connected = False
             return False
-    async def receive_response(self, timeout=5.0):
-        func_str = "receive_response"
+    async def receive_data(self, timeout=5.0):
+        func_str = "receive_data"
         """Receive a response from the server with timeout"""
         if not self.connected or not self.socket:
             return None
         
         try:
             # Set socket to non-blocking mode
-            self.socket.setblocking(False)
+            self.socket.setblocking(True)
             
             # Wait for data with timeout using asyncio
             start_time = time.time()
@@ -95,9 +102,7 @@ class SocketDriver:
                     resp = self.socket.recv(1024)
                     if resp:
                         return json.loads(resp)
-                except BlockingIOError:
-                    # No data available yet
-                    await asyncio.sleep(0.1)
+               
                 except Exception as e:
                     logger.error(self.drv_str, func_str, f"Error receiving response: {e}")
                     break

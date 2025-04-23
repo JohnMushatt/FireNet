@@ -22,7 +22,8 @@ class WiFiDriver:
     def init_network_table(self):
         self.num_networks = len(self.network_interfaces)
         self.current_network = self.network_interfaces[0]
-
+    def get_ip_address(self):
+        return self.wlan.ifconfig()[0]
     async def init_wifi_driver(self, driver_table_status : dict[str, bool]):
         func_str = "init_wifi_driver"
         """Connect to WiFi network"""

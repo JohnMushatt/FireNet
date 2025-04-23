@@ -36,7 +36,7 @@ class Logger:
         self.min_level = min_level
         self.use_color = use_color
     
-    def _log(self, level, driver_str, func_str, message):
+    def _log(self, level=DEBUG, driver_str=None, func_str=None, message=None):
         """Internal logging method."""
         if level < self.min_level:
             return
