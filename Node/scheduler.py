@@ -1,11 +1,11 @@
 import asyncio
 import socket
-from network_config import read_network_config
-import network
-from machine import Pin
+from network_config import read_network_config # type: ignore
+import network # type: ignore
+from machine import Pin # type: ignore
 import json
 import time
-from neopixel import NeoPixel
+from neopixel import NeoPixel # type: ignore
 from wifi_driver import WiFiDriver
 from socket_driver import SocketDriver
 from logger import logger
@@ -14,7 +14,7 @@ from logger import logger
 def is_micropython():
     """Returns True if running on MicroPython (ESP32, etc.)"""
     try:
-        from machine import Pin
+        from machine import Pin # type: ignore
         return True
     except ImportError:
         return False
@@ -116,6 +116,8 @@ class AsyncNode:
         
         logger.info(self.drv_str, func_str, f"socket_init task completed: status={self.driver_table_status['Socket_Driver']}\n")
 
+
+        
         tasks = [
             asyncio.create_task(self.simulate_sensor_reading()),
             asyncio.create_task(self.transmit_data()),

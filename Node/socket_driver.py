@@ -48,7 +48,7 @@ class SocketDriver:
             
                 self.connected = True
                 logger.info(self.drv_str, func_str, f"socket connected to {current_server_ip}:{self.server_port}")
-           
+                driver_table_status["Socket_Driver"] = True
                 
             except Exception as e:
                 logger.error(self.drv_str, func_str, f"Error connecting to socket: {e}")

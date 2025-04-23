@@ -1,8 +1,8 @@
 import time
-import network
+import network # type: ignore
 import asyncio
-from machine import Pin
-from neopixel import NeoPixel
+from machine import Pin # type: ignore
+from neopixel import NeoPixel # type: ignore
 from logger import logger
 
 class WiFiDriver:
@@ -114,46 +114,3 @@ class WiFiDriver:
                     self.neopixel.write()
             
             await asyncio.sleep(1)
-""" async def wifi_driver_init(self):
-        drv_str = "WiFi Driver"
-        
-        self.wlan = network.WLAN(network.STA_IF)
-        self.wlan.active(1)
-        #check if already connected
-        if self.wlan.isconnected():
-            print(f"{drv_str}: Already connected to WiFi, disconnecting and restarting connection process")
-            self.wlan.disconnect()
-            await asyncio.sleep(1)
-        else:
-            print(f"{drv_str}: Not connected to WiFi, connecting to {self.ssid}")
-        print(f"{drv_str}: Connecting to WiFi network {self.ssid}")
-        #connect to wifi
-        reconnect_count = 0
-        self.wlan.active(1)
-        while  reconnect_count < 10 and not self.wlan.isconnected():
-            try:
-                self.wlan.connect(self.ssid, self.password)
-                await asyncio.sleep(1)
-                #print(f"Connected? {self.wlan.isconnected()}")
-                if self.wlan.isconnected():
-                    print("Connected to WiFi")
-                    self.neopixel.fill((0,25,0))  # Green indicates connected
-                    self.neopixel.write()
-                    print(f'{drv_str}: Connected to WiFi')
-                    self.connected = True
-                    self.driver_table_status[drv_str] = True
-                    return True
-
-                
-            except Exception as e:
-                if reconnect_count == 5:
-                    print(f"{drv_str}: Failed to connect to WiFi after {reconnect_count} attempts, attempting to connect" +
-                " to hotspot")
-                    self.use_hotspot = True
-  
-                print(f"{drv_str}: Error connecting to WiFi: {e}")
-                reconnect_count += 1
-                
-                await asyncio.sleep(1)
-        self.driver_table_status[drv_str] = False
-        return False """
