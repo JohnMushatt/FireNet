@@ -55,6 +55,7 @@ class Logger:
 
         # Add color if enabled
         if self.use_color:
+            
             color_level = self.COLORS.get(level, self.RESET)
 
             color_driver = self.COLORS.get(logger.WARNING, self.RESET)

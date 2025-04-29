@@ -6,7 +6,7 @@ from neopixel import NeoPixel # type: ignore
 from logger import logger
 
 class WiFiDriver:
-    def __init__(self, config):
+    def __init__(self, config, retry=True):
         # Initialize with configuration
         self.config = config
         self.network_interfaces = list(config.keys())
@@ -16,7 +16,7 @@ class WiFiDriver:
         self.connected = False
         self.wlan = None
         self.drv_str = "WiFi_Driver"
-        
+        self.retry = retry
         # Use provided neopixel or create one
         #self.neopixel = neopixel
     def init_network_table(self):
@@ -38,12 +38,12 @@ class WiFiDriver:
             logger.info(self.drv_str, func_str, "Already connected to WiFi, disconnecting and restarting connection process")
             self.wlan.disconnect()
             await asyncio.sleep(1)
+            self.wlan.active(1)
         else:
             logger.info(self.drv_str, func_str, "Not connected to WiFi")
         
         
 
-        self.wlan.active(1)
         reconnect_count_max = 2
         time_start = time.time()
         while (self.network_interface_index < self.num_networks and not self.wlan.isconnected()):
@@ -54,6 +54,10 @@ class WiFiDriver:
             current_network_ssid = self.config[self.current_network]['ssid']
             current_network_password = self.config[self.current_network]['password']
 
+            #logger.info(self.drv_str, func_str, f"Re-initializing WiFi driver to connect to {self.current_network}")
+            self.wlan.disconnect()
+            await asyncio.sleep(1)
+            self.wlan.active(1)
             while reconnect_count < reconnect_count_max and not self.wlan.isconnected():
 
                 try:

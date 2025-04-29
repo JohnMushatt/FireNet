@@ -29,7 +29,7 @@ class ServerUI:
         self.server_thread = None
         self.loop = None
         self.server = None
-        self.message_parser = MessageParser()
+        self.message_parser = MessageParser(connected_clients=connected_clients)
         self.setup_ui()
         self.update_status_display()
         
@@ -752,8 +752,9 @@ class ServerUI:
                     
                     # Update UI
                     self.root.after(0, self.update_clients_view)
-                    resp = await self.parse_message(message,client_id=client_id)
-                    writer.write(json.dumps(resp).encode() + b'\n')
+
+                    response = await self.message_parser.parse_message(message,client_id=client_id)
+                    writer.write(json.dumps(response).encode() + b'\n')
                     await writer.drain()
                     
                 except json.JSONDecodeError:
@@ -779,32 +780,7 @@ class ServerUI:
                 logger.warning(f"Connection was reset by client {client_id}")
             except Exception as e:
                 logger.error(f"Error while closing connection with client {client_id}: {e}")
-    async def parse_message(self, message, client_id):
-        """Parse incoming message and route to appropriate handler"""
-        try:
-            # Determine message type
-            msg_type = message.get("msg_id", "unknown")
-            
-            # Log the message type and source
-            logger.info(f"Processing {msg_type} message from {client_id}")
-            resp = {"msg_id": "node_update_ack", "status": "ok"}
-            return resp
-            # Check if we have a handler for this message type
-            if msg_type in self.handlers:
-                # Call the appropriate handler
-                return await self.handlers[msg_type](message, client_id)
-            else:
-                # Handle unknown message type
-                logger.warning(f"No handler for message type: {msg_type}")
-                return {"status": "error", "message": f"Unknown message type: {msg_type}"}
-                
-        except KeyError as e:
-            logger.error(f"Missing required field in message: {e}")
-            return {"status": "error", "message": f"Missing required field: {e}"}
-        except Exception as e:
-            logger.error(f"Error parsing message: {e}")
-            return {"status": "error", "message": str(e)}
-
+    
     async def status_monitor(self):
         """Periodically update server status"""
         while True:

@@ -75,6 +75,8 @@ class AsyncNode:
                 logger.info(self.drv_str, func_str, f'Data sent to {self.socket_driver.server_ip[self.socket_driver.server_ip_index]}:{self.server_port}')
                 resp = await self.socket_driver.receive_data()
                 logger.info(self.drv_str, func_str, f'Data received from central compute node @ {resp}')
+            else:
+                await asyncio.sleep(10)
     async def send_data(self, data):
         func_str = "send_data"
         logger.info(self.drv_str, func_str, f'Sending data to {self.socket_driver.server_ip[self.socket_driver.server_ip_index]}:{self.server_port}')
@@ -93,34 +95,68 @@ class AsyncNode:
         except Exception as e:
             logger.error(self.drv_str, func_str, f'Error receiving data: {e}')
             return None
-    async def connection_monitor(self):
-        drv_str = "Connection Monitor"
+    async def process_messages(self):
+        """Process messages from the message queue"""
+        func_str = "process_messages"
+        
         while True:
-            if not self.wifi_driver.is_connected():
-                self.connected = False
-                self.neopixel.fill((25,0,0))  # Red indicates disconnected
-                self.neopixel.write()
-                print(f"{drv_str}: WiFi disconnected, attempting to reconnect...")
-                await self.wifi_driver.init_wifi_driver(self.driver_table_status)
-                print(f"{drv_str}: WiFi driver reinitialization task completed")
+            # Non-blocking check for new messages
+            message = await self.socket_driver.get_next_message(timeout=0.5)
+            
+            if message:
+                logger.info(self.drv_str, func_str, f"Processing message: {message}")
+                msg_id = message.get("msg_id", "unknown")
+                
+                # Handle different message types
+                if msg_id == "command":
+                    await self.handle_command(message)
+                elif msg_id == "config_update":
+                    await self.handle_config_update(message)
+                # Add more handlers as needed
+                
+            await asyncio.sleep(0.1)
+    
+    async def send_message_with_response(self, message_data, expected_msg_id) -> tuple[bool, dict]:
+        func_str = "send_message_with_response"
+        """Example of sending a command and waiting for a specific response"""
+        # This is a blocking call that waits for the specific response
+        logger.info(self.drv_str, func_str, f"Data: {message_data} Expected response: {expected_msg_id}")
+        response = await self.socket_driver.send_and_receive(
+            message_data,
+            timeout=10.0,
+            expected_msg_id=expected_msg_id
+        )
+        
+        if response:
+            debug_str : str
+            if response.get("msg_id") == expected_msg_id:
+                debug_str = f"Response includes expected msg_id: {expected_msg_id}"
             else:
-                if self.neopixel[0] == (0,0,0):
-                    self.neopixel.fill((0,25,0))  # Green indicates connected
-                else:
-                    self.neopixel.fill((0,0,0))  # Green indicates connected
-                self.neopixel.write()
-            #print(f"{drv_str}: {self.station.isconnected()}")
-            await asyncio.sleep(1)
-    async def send_node_update(self):
+                debug_str = f"Got unexpected response or no specific msg_id: {response.get('msg_id')}"
+            logger.info(self.drv_str, func_str, debug_str)
+            return True, response
+        else:
+            logger.error(self.drv_str, func_str, "Command timed out")
+            return False, None
+
+    async def send_node_update(self) -> tuple[bool, dict]:
         func_str = "send_node_update"
 
         data = {
             "msg_id": "node_update",
             "node_name": self.node_name,
         }
-        json_data = json.dumps(data) + '\n'
-        logger.info(self.drv_str, func_str, f"sending node info to central compute node: {json_data}")
-        await self.send_data(json_data)
+        expected_msg_id = "node_update_response"
+        logger.info(self.drv_str, func_str, f"Sending node update to central compute node")
+        success, resp = await self.send_message_with_response(data, expected_msg_id)
+        if success:
+            logger.info(self.drv_str, func_str, f"Node update was received by central compute node")
+            return True, resp
+        else:
+            logger.error(self.drv_str, func_str, f"Node update was not received by central compute node")
+            return False, None
+
+
 
     async def scheduler_run(self):
         func_str = "scheduler_run"
@@ -138,32 +174,43 @@ class AsyncNode:
 
         #setup socket
         logger.info(self.drv_str, func_str, f"starting socket_init task")
-        socket_task = asyncio.create_task(self.socket_driver.init_socket_driver(driver_table_status=self.driver_table_status,retry=True))
+        socket_task = asyncio.create_task(self.socket_driver.init_socket_driver(driver_table_status=self.driver_table_status,retry=True, use_dedicated_server=True))
         await socket_task
         if not self.driver_table_status['Socket_Driver']:
             return
         
         logger.info(self.drv_str, func_str, f"socket_init task completed: status={self.driver_table_status['Socket_Driver']}\n")
 
+        print("\n\n*******************************\n\n")
+        logger.info(self.drv_str,func_str, f"Starting main application")
 
-        logger.info(self.drv_str, func_str, f"sending node update to central compute node")
+        #send node update to central compute node
         await self.send_node_update()
-        logger.info(self.drv_str, func_str, f"receiving node acknowledgement from central compute node")
+
+        #wait for node update acknowledgement from central compute node
         resp = await self.receive_data()
-        logger.info(self.drv_str, func_str, f"node acknowledgement received from central compute node: {resp}")
-        if resp["msg_id"] == "node_update_ack" and resp["status"] == "ok":
+        if resp == None:
+            logger.error(self.drv_str, func_str, f"No message received from central compute node")
+            return
+        elif resp["msg_id"] == "node_update_ack" and resp["status"] == "ok":
             logger.info(self.drv_str, func_str, f"node update acknowledgement received from central compute node: {resp}")
         else:
             logger.error(self.drv_str, func_str, f"node update acknowledgement not received from central compute node: {resp}")
+
+        #start background listener for incoming messages
+        logger.info(self.drv_str, func_str, f"starting background listener for incoming messages")
+        await self.socket_driver.start_background_listener()
+        logger.info(self.drv_str, func_str, f"background listener started")
 
         logger.info(self.drv_str, func_str, f"scheduler has finished all setup tasks!")
 
         tasks = [
             asyncio.create_task(self.simulate_sensor_reading()),
             asyncio.create_task(self.transmit_data()),
-            asyncio.create_task(self.connection_monitor()),
+            #asyncio.create_task(self.connection_monitor()),
+            #asyncio.create_task(self.process_messages())
         ]
-        logger.info(self.drv_str, func_str, f"starting tasks {tasks}")
+        logger.info(self.drv_str, func_str, f"starting tasks {', '.join([t.get_name() for t in tasks])}")
         await asyncio.gather(*tasks)
         logger.info(self.drv_str, func_str, f"tasks completed {tasks}")
 
@@ -174,7 +221,7 @@ def main():
         print("Please supply a config file")
         return
     version_str = ""
-    node = AsyncNode(node_name="Generic Node",config=config)
+    node = AsyncNode(node_name="John's Test Node",config=config)
     version_str = f"Running node: {node.node_name} Version: {node.version}"
     if is_micropython():
         version_str += " MicroPython"
