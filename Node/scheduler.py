@@ -65,16 +65,12 @@ class AsyncNode:
     async def transmit_data(self):
         func_str = "transmit_data"
         while True:
-            if self.data_queue and self.socket_driver.is_connected():
+            if self.data_queue and self.socket_driver.connected:
                 data = self.data_queue.pop(0)
                 # Simulate data transmission
                 json_data = json.dumps(data) + '\n'
                 logger.info(self.drv_str, func_str, f'Transmitting data to {self.socket_driver.server_ip[self.socket_driver.server_ip_index]}:{self.server_port}')
-
-                self.socket_driver.send_data(json_data)
-                logger.info(self.drv_str, func_str, f'Data sent to {self.socket_driver.server_ip[self.socket_driver.server_ip_index]}:{self.server_port}')
-                resp = await self.socket_driver.receive_data()
-                logger.info(self.drv_str, func_str, f'Data received from central compute node @ {resp}')
+                await self.send_message_with_response(json_data)
             else:
                 await asyncio.sleep(10)
     async def send_data(self, data):
@@ -116,7 +112,7 @@ class AsyncNode:
                 
             await asyncio.sleep(0.1)
     
-    async def send_message_with_response(self, message_data, expected_msg_id) -> tuple[bool, dict]:
+    async def send_message_with_response(self, message_data, expected_msg_id=None) -> tuple[bool, dict]:
         func_str = "send_message_with_response"
         """Example of sending a command and waiting for a specific response"""
         # This is a blocking call that waits for the specific response
@@ -132,7 +128,7 @@ class AsyncNode:
             if response.get("msg_id") == expected_msg_id:
                 debug_str = f"Response includes expected msg_id: {expected_msg_id}"
             else:
-                debug_str = f"Got unexpected response or no specific msg_id: {response.get('msg_id')}"
+                debug_str = f"Got response with no specific msg_id: {response.get('msg_id')}"
             logger.info(self.drv_str, func_str, debug_str)
             return True, response
         else:
@@ -187,20 +183,12 @@ class AsyncNode:
         #send node update to central compute node
         await self.send_node_update()
 
-        #wait for node update acknowledgement from central compute node
-        resp = await self.receive_data()
-        if resp == None:
-            logger.error(self.drv_str, func_str, f"No message received from central compute node")
-            return
-        elif resp["msg_id"] == "node_update_ack" and resp["status"] == "ok":
-            logger.info(self.drv_str, func_str, f"node update acknowledgement received from central compute node: {resp}")
-        else:
-            logger.error(self.drv_str, func_str, f"node update acknowledgement not received from central compute node: {resp}")
+       
 
         #start background listener for incoming messages
-        logger.info(self.drv_str, func_str, f"starting background listener for incoming messages")
-        await self.socket_driver.start_background_listener()
-        logger.info(self.drv_str, func_str, f"background listener started")
+        #logger.info(self.drv_str, func_str, f"starting background listener for incoming messages")
+        #await self.socket_driver.start_background_listener()
+        #logger.info(self.drv_str, func_str, f"background listener started")
 
         logger.info(self.drv_str, func_str, f"scheduler has finished all setup tasks!")
 
@@ -210,7 +198,7 @@ class AsyncNode:
             #asyncio.create_task(self.connection_monitor()),
             #asyncio.create_task(self.process_messages())
         ]
-        logger.info(self.drv_str, func_str, f"starting tasks {', '.join([t.get_name() for t in tasks])}")
+        logger.info(self.drv_str, func_str, f"starting tasks: {tasks}")
         await asyncio.gather(*tasks)
         logger.info(self.drv_str, func_str, f"tasks completed {tasks}")
 
