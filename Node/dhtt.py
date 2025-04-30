@@ -3,10 +3,10 @@ from machine import Pin
 import dht
 
 class TempHumidSensor:
-    def __init__(self):
+    def __init__(self, pin=15):
         self.last_read = time.ticks_ms() - 10000
         
-        self.dht = dht.DHT22(Pin(15))
+        self.dht = dht.DHT22(Pin(pin))
     
     def update(self, force=False):
         curr_time = time.ticks_ms()
