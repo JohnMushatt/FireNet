@@ -22,6 +22,7 @@ class MessageParser:
         self.register_handler("sensor_data", self.handle_sensor_data)
         self.register_handler("status_request", self.handle_status_request)
         self.register_handler("default", self.default_handler)
+        self.register_handler("dhtt_data", self.handle_dhtt_sensor)
     async def parse_message(self, message, client_id):
         """Parse incoming message and route to appropriate handler"""
         try:
@@ -51,7 +52,18 @@ class MessageParser:
         logger.warning(f"No handler for message type: {message.get('msg_id', 'unknown')}")
         resp = {"msg_id": "unknown_message_type", "status": "error", "message": f"Unknown message type: {message.get('msg_id', 'unknown')}"}
         return resp
-    
+    async def handle_dhtt_sensor(self,message, client_id):
+        """Handle DHT11 sensor data messages"""
+
+        """ {'timestamp': 799274659, 'temperature': 25.7, 'humidity': 42.6, 'node_name': 'DHTT Node', 'msg_id': 'dhtt_data'} """
+        timestamp = message.get("timestamp", time.time())
+        temperature = message.get("temperature", 0.0)
+        humidity = message.get("humidity", 0.0)
+        node_name = message.get("node_name", "Unknown Node")
+
+        logger.info(f"DHTT sensor data from {node_name} (ID: {client_id}): {temperature}C, {humidity}%")
+        
+        
     async def handle_node_update(self, message, client_id):
         """Handle node_update messages"""
         node_name = message.get("node_name", "Unknown Node")

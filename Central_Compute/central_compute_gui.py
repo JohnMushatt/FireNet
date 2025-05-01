@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import sys
 import threading
 import time
@@ -32,6 +33,15 @@ class ServerUI:
         self.message_parser = MessageParser(connected_clients=connected_clients)
         self.setup_ui()
         self.update_status_display()
+
+        self.FireNetParams = {
+           "temperature": 0,
+            "humidity": 0,
+            "smoke_level": 0,
+            "temp_threshold": 30, #temp threshold fore fire in farenheight
+            "humidity_threshold": 50,
+            "smoke_threshold": 100
+        }
         
     def setup_ui(self):
         # Create notebook (tabs)
@@ -472,7 +482,7 @@ class ServerUI:
             
             # Update UI
             self.update_clients_view()
-            
+            #await self.message_parser.parse_message(json_data,client_id=client_id)
             # Log the simulated message
             self.log_to_sim(f"Sent message: {message_text}")
             logger.info(f"Simulated message from {client_id}: {json_data}")
@@ -697,7 +707,53 @@ class ServerUI:
         finally:
             self.loop.close()
             self.loop = None
-    
+    def handle_motor_node(self,message,client_id):
+        """ {
+        "msg_id": "fire_conditions",
+        "node_position": "[x_pos y_pos]",
+        "fire_conditions": "fire_present_trigger (bool)",
+        "timestamp": time.time()
+        }
+        """
+        """Handle a motor node connection"""
+        logger.info(f"Motor node connected with ID: {client_id}")
+        
+
+        msg_id = "fire_conditions"
+        node_position = [random.randint(0,100),random.randint(0,100)]
+
+        temp_trigger = False
+        humidity_trigger = False    
+        smoke_trigger = False
+
+        if self.FireNetParams["temperature"] > self.FireNetParams["temp_threshold"]:
+            temp_trigger = True
+        else:
+            temp_trigger = False
+        if self.FireNetParams["humidity"] > self.FireNetParams["humidity_threshold"]:
+            humidity_trigger = True
+        else:
+            humidity_trigger = False
+        if self.FireNetParams["smoke_level"] > self.FireNetParams["smoke_threshold"]:
+            smoke_trigger = True
+        else:
+            smoke_trigger = False
+
+
+        fire_conditions = temp_trigger and humidity_trigger and smoke_trigger
+        timestamp = time.time()
+
+        payload = {
+            "msg_id": msg_id,
+            "node_position": node_position,
+            "fire_conditions": fire_conditions,
+            "timestamp": timestamp
+        }
+        
+        #TODO: Add motor node handling here
+
+
+
     async def handle_client(self, reader, writer):
         """Handle a client connection"""
         # Generate a unique client ID
@@ -753,7 +809,15 @@ class ServerUI:
                     # Update UI
                     self.root.after(0, self.update_clients_view)
 
-                    response = await self.message_parser.parse_message(message,client_id=client_id)
+                    response = None
+                    if message.get("msg_id") == "node_update":
+                        response = await self.handle_node_update(message,client_id)
+                    elif message.get("msg_id") == "dhtt_data":
+                        response = await self.handle_dhtt_sensor(message,client_id)
+                    elif message.get("msg_id") == "motor_data":
+                        response = await self.handle_motor_node(message,client_id)
+                    else:
+                        response = self.default_handler(message,client_id)
                     writer.write(json.dumps(response).encode() + b'\n')
                     await writer.drain()
                     
@@ -780,7 +844,51 @@ class ServerUI:
                 logger.warning(f"Connection was reset by client {client_id}")
             except Exception as e:
                 logger.error(f"Error while closing connection with client {client_id}: {e}")
-    
+    async def default_handler(self, message, client_id):
+        """Handle unknown message types"""
+        logger.warning(f"No handler for message type: {message.get('msg_id', 'unknown')}")
+        resp = {"msg_id": "unknown_message_type", "status": "error", "message": f"Unknown message type: {message.get('msg_id', 'unknown')}"}
+        return resp
+    async def handle_dhtt_sensor(self,message, client_id):
+        """Handle DHT11 sensor data messages"""
+
+        """ {'timestamp': 799274659, 'temperature': 25.7, 'humidity': 42.6, 'node_name': 'DHTT Node', 'msg_id': 'dhtt_data'} """
+        timestamp = message.get("timestamp", time.time())
+        temperature = message.get("temperature", 0.0)
+        humidity = message.get("humidity", 0.0)
+        node_name = message.get("node_name", "Unknown Node")
+
+        logger.info(f"DHTT sensor data from {node_name} (ID: {client_id}): {temperature}C, {humidity}%")
+    async def handle_node_update(self, message, client_id):
+        """Handle node_update messages"""
+        node_name = message.get("node_name", "Unknown Node")
+        node_type = message.get("node_type", "Generic")
+        version = message.get("version", "Unknown")
+        
+        # Update client information with node details
+        if client_id in connected_clients:
+            connected_clients[client_id]["node_name"] = node_name
+            connected_clients[client_id]["node_type"] = node_type
+            connected_clients[client_id]["version"] = version
+            
+            # Additional fields if present
+            if "capabilities" in message:
+                connected_clients[client_id]["capabilities"] = message["capabilities"]
+                
+            logger.info(f"Node update from {node_name} (ID: {client_id}, Type: {node_type}, Version: {version})")
+            
+            # Return success response
+            return {
+                "msg_id": "node_update_response",
+                "status": "success", 
+                "message": "Node update received",
+                "timestamp": time.time()
+            }
+        else:
+            logger.warning(f"Received node_update from unknown client ID: {client_id}")
+            return {"status": "error", "message": "Client not recognized"}
+    async def handle_voc_sensor(self,message, client_id):
+        """Received data from 9a6db783-107c-4567-b7f4-c337cc09e82a: {'timestamp': 799286919, 'Avg VOC': '100.1867', 'Threshold': False, 'node_name': "John's Test Node", 'msg_id': 'Average VOC Gas Reading'}"""
     async def status_monitor(self):
         """Periodically update server status"""
         while True:

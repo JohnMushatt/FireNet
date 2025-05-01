@@ -1,6 +1,6 @@
 import time
-from machine import Pin
-import dht
+from machine import Pin # type: ignore
+import dht # type: ignore
 
 class TempHumidSensor:
     def __init__(self, pin=15):

@@ -11,6 +11,29 @@ from socket_driver import SocketDriver
 from logger import logger
 
 
+dhtt_msg = {
+    "msg_id": "dhtt_data",
+    "timestamp": time.time(),
+    "temperature": 0.0,
+    "humidity": 0.0,
+    "node_name": "DHTT Node"
+}
+motor_msg = {
+    "msg_id": "motor_data",
+    "timestamp": time.time(),
+    "motor_position": [0,0],
+    "node_name": "Motor Node"
+}
+
+smoke_msg = {
+    "msg_id": "smoke_data",
+    "timestamp": time.time(),
+    "smoke_level": 0.0,
+    "node_name": "Smoke Node"
+}
+
+
+
 def is_micropython():
     """Returns True if running on MicroPython (ESP32, etc.)"""
     try:
@@ -51,7 +74,19 @@ class AsyncNode:
     async def simulate_sensor_reading(self):
         while True:
             # Simulate reading from different sensors
-            sensor_data = {
+            
+            if self.node_name == "DHTT Node":
+                sensor_data = dhtt_msg
+                sensor_data["temperature"] = 20 + (time.time() % 10)
+                sensor_data["humidity"] = 50 + (time.time() % 20)
+            elif self.node_name == "Motor Node":
+                sensor_data = motor_msg
+                sensor_data["motor_position"] = [time.time() % 100, time.time() % 100]
+            elif self.node_name == "Smoke Node":
+                sensor_data = smoke_msg
+                sensor_data["smoke_level"] = 0.1 + (time.time() % 0.5)
+            else:
+                sensor_data = {
                 'node_name': self.node_name,
                 'msg_id': 'sensor_data',
                 'timestamp': time.time(),
@@ -209,7 +244,7 @@ def main():
         print("Please supply a config file")
         return
     version_str = ""
-    node = AsyncNode(node_name="John's Test Node",config=config)
+    node = AsyncNode(node_name="Motor Node",config=config)
     version_str = f"Running node: {node.node_name} Version: {node.version}"
     if is_micropython():
         version_str += " MicroPython"
