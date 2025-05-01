@@ -60,6 +60,19 @@ class MessageParser:
         temperature = message.get("temperature", 0.0)
         humidity = message.get("humidity", 0.0)
         node_name = message.get("node_name", "Unknown Node")
+        
+        # Personal opinion on how to check fire condition:
+        # Note: Temperature from node is in celsius
+        # But, I did my research in fahrenheit, so I will call it temp_f
+        # normalized_temp = (temp_f - 100) / 30 * 100
+        # (Note that here, normalized_temp and humidity are between 0 and 100)
+        # fire_probability = humidity + temperature
+        # Was also gonna put a "if temp_f > 140 then 1,000,000,000% chance of a fire"
+        # (note: highest recorded temp in nature is 134F in death valley)
+        #
+        # Lastly: My plan also involved taking the average temp over the past 2 minutes of readings.
+        # (hence the 1,000,000,000% chance - that way, even if it
+        # gets averaged over a hundred other readings, it'll still declare a fire condition)
 
         logger.info(f"DHTT sensor data from {node_name} (ID: {client_id}): {temperature}C, {humidity}%")
         
