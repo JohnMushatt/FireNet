@@ -11,7 +11,7 @@ class TempHumidSensor:
     def update(self, force=False):
         curr_time = time.ticks_ms()
         # limit to 1 read per second (arbitrary, to ease up the pins and make this less blocking)
-        if (self.last_read + 10000) >= curr_time:
+        if (self.last_read + 4500) >= curr_time:
             # already read within the last second
             return
         

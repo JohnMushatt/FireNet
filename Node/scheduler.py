@@ -9,13 +9,14 @@ from neopixel import NeoPixel # type: ignore
 from wifi_driver import WiFiDriver
 from socket_driver import SocketDriver
 from logger import logger
+import dhtt
 
 
 dhtt_msg = {
     "msg_id": "dhtt_data",
     "timestamp": time.time(),
-    "temperature": 0.0,
-    "humidity": 0.0,
+    "temperature": -100.0,  # Fillers representing "data not filled in"
+    "humidity": -100.0,
     "node_name": "DHTT Node"
 }
 motor_msg = {
@@ -72,13 +73,21 @@ class AsyncNode:
         self.neopixel.write()
 
     async def simulate_sensor_reading(self):
+        if self.node_name == "DHTT Node":
+            # Replace pin with whatever is used. For me it's 15.
+            dhtt_sensor = dhtt.TempHumidSensor(pin=15)
+        else:
+            # prefer having it none, just so it exists (personal preference)
+            dhtt_sensor = None
+        
         while True:
             # Simulate reading from different sensors
             
             if self.node_name == "DHTT Node":
+                # Note: We could make the above check "if dhtt_sensor is not None"
                 sensor_data = dhtt_msg
-                sensor_data["temperature"] = 20 + (time.time() % 10)
-                sensor_data["humidity"] = 50 + (time.time() % 20)
+                sensor_data["temperature"] = dhtt_sensor.get_temp()
+                sensor_data["humidity"] = dhtt_sensor.get_humidity()
             elif self.node_name == "Motor Node":
                 sensor_data = motor_msg
                 sensor_data["motor_position"] = [time.time() % 100, time.time() % 100]
@@ -94,6 +103,7 @@ class AsyncNode:
                 'humidity': 50 + (time.time() % 20),
                 'pressure': 1000 + (time.time() % 50)
             }
+            sensor_data["timestamp"] = time.time()
             self.data_queue.append(sensor_data)
             await asyncio.sleep(5)  # Read every 5 seconds
 
